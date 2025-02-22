@@ -10,7 +10,7 @@
 tmux() {
   case "$1" in
     "new-session"|"new-window"|"split-window")
-      local ROOT_ARGS="-c $session_root"
+      local ROOT_ARGS=(-c "$session_root")
       ;;
   esac
 
@@ -383,9 +383,8 @@ __get_current_window_index() {
 
 __go_to_session() {
   if [ -z "$TMUX" ]; then
-    tmux $TMUXIFIER_TMUX_ITERM_ATTACH -u \
-      attach-session -t "$session:"
+    tmuxifier-tmux -u attach-session -t "$session:"
   else
-    tmux -u switch-client -t "$session:"
+    tmuxifier-tmux -u switch-client -t "$session:"
   fi
 }
