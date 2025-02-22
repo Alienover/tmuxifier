@@ -8,7 +8,13 @@
 
 # Alias tmux to tmuxifier-tmux wrapper.
 tmux() {
-  tmuxifier-tmux "$@"
+  case "$1" in
+    "new-session"|"new-window"|"split-window")
+      local ROOT_ARGS="-c $session_root"
+      ;;
+  esac
+
+  tmuxifier-tmux $1 "${ROOT_ARGS[@]}" "${@:2}"
 }
 
 # Create a new window.
@@ -18,16 +24,17 @@ tmux() {
 #   - $2: (optional) Shell command to execute when window is created.
 #
 new_window() {
-  if [ -n "$1" ]; then local winarg=(-n "$1"); fi
-  if [ -n "$2" ]; then local command=("$2"); fi
+  if [ -n "$1" ]; then local winarg="-n $1"; fi
+  if [ -n "$2" ]; then local command="$2"; fi
 
-  tmuxifier-tmux new-window -t "$session:" "${winarg[@]}" "${command[@]}"
+  tmux new-window -t "$session:" $winarg $command
 
   # Disable renaming if a window name was given.
-  if [ -n "$1" ]; then tmuxifier-tmux set-option -t "$1" allow-rename off; fi
+  if [ -n "$1" ]; then
+    tmux set-option -t "$session:$1" allow-rename off
+  fi
 
   window="$(__get_current_window_index)"
-  __go_to_window_or_session_path
 }
 
 # Split current window/pane vertically.
@@ -43,8 +50,7 @@ split_v() {
   else
     if [ -n "$1" ]; then local percentage=(-p "$1"); fi
   fi
-  tmuxifier-tmux split-window -t "$session:$window.$2" -v "${percentage[@]}"
-  __go_to_window_or_session_path
+  tmux split-window -t "$session:$window.$2" -v "${percentage[@]}"
 }
 
 # Split current window/pane horizontally.
@@ -60,8 +66,7 @@ split_h() {
   else
     if [ -n "$1" ]; then local percentage=(-p "$1"); fi
   fi
-  tmuxifier-tmux split-window -t "$session:$window.$2" -h "${percentage[@]}"
-  __go_to_window_or_session_path
+  tmux split-window -t "$session:$window.$2" -h "${percentage[@]}"
 }
 
 # Split current window/pane vertically by line count.
@@ -72,8 +77,7 @@ split_h() {
 #
 split_vl() {
   if [ -n "$1" ]; then local count=(-l "$1"); fi
-  tmuxifier-tmux split-window -t "$session:$window.$2" -v "${count[@]}"
-  __go_to_window_or_session_path
+  tmux split-window -t "$session:$window.$2" -v "${count[@]}"
 }
 
 # Split current window/pane horizontally by column count.
@@ -84,8 +88,15 @@ split_vl() {
 #
 split_hl() {
   if [ -n "$1" ]; then local count=(-l "$1"); fi
-  tmuxifier-tmux split-window -t "$session:$window.$2" -h "${count[@]}"
-  __go_to_window_or_session_path
+  tmux split-window -t "$session:$window.$2" -h "${count[@]}"
+}
+
+resize_pane_h() {
+  tmux resize-pane -t "$session:$windwo.$2" -y "$1"
+}
+
+resize_pane_w() {
+  tmux resize-pane -t "$session:$windwo.$2" -x "$1"
 }
 
 # Run clock mode.
@@ -93,7 +104,7 @@ split_hl() {
 # Arguments:
 #   - $1: (optional) Target pane ID in which to run
 clock() {
-  tmuxifier-tmux clock-mode -t "$session:$window.$1"
+  tmux clock-mode -t "$session:$window.$1"
 }
 
 # Select a specific window.
@@ -102,7 +113,7 @@ clock() {
 #   - $1: Window ID or name to select.
 #
 select_window() {
-  tmuxifier-tmux select-window -t "$session:$1"
+  tmux select-window -t "$session:$1"
   window="$(__get_current_window_index)"
 }
 
@@ -112,7 +123,7 @@ select_window() {
 #   - $1: Pane ID to select.
 #
 select_pane() {
-  tmuxifier-tmux select-pane -t "$session:$window.$1"
+  tmux select-pane -t "$session:$window.$1"
 }
 
 # Balance windows vertically with the "even-vertical" layout.
@@ -121,7 +132,7 @@ select_pane() {
 #   - $1: (optional) Window ID or name to operate on.
 #
 balance_windows_vertical() {
-  tmuxifier-tmux select-layout -t "$session:${1:-$window}" even-vertical
+  tmux select-layout -t "$session:${1:-$window}" even-vertical
 }
 
 # Balance windows horizontally with the "even-horizontal" layout.
@@ -130,7 +141,7 @@ balance_windows_vertical() {
 #   - $1: (optional) Window ID or name to operate on.
 #
 balance_windows_horizontal() {
-  tmuxifier-tmux select-layout -t "$session:${1:-$window}" even-horizontal
+  tmux select-layout -t "$session:${1:-$window}" even-horizontal
 }
 
 # Turn on synchronize-panes in a window.
@@ -139,7 +150,7 @@ balance_windows_horizontal() {
 #   - $1: (optional) Window ID or name to operate on.
 #
 synchronize_on() {
-  tmuxifier-tmux set-window-option -t "$session:${1:-$window}" \
+  tmux set-window-option -t "$session:${1:-$window}" \
                  synchronize-panes on
 }
 
@@ -149,7 +160,7 @@ synchronize_on() {
 #   - $1: (optional) Window ID or name to operate on.
 #
 synchronize_off() {
-  tmuxifier-tmux set-window-option -t "$session:${1:-$window}" \
+  tmux set-window-option -t "$session:${1:-$window}" \
                  synchronize-panes off
 }
 
@@ -160,7 +171,7 @@ synchronize_off() {
 #   - $2: (optional) Target pane ID to send input to.
 #
 send_keys() {
-  tmuxifier-tmux send-keys -t "$session:$window.$2" "$1"
+  tmux send-keys -t "$session:$window.$2" "$1"
 }
 
 # Runs a shell command in the currently active pane/window.
@@ -183,6 +194,8 @@ session_root() {
   local dir="$(__expand_path $@)"
   if [ -d "$dir" ]; then
     session_root="$dir"
+  else
+    session_root="$HOME"
   fi
 }
 
@@ -195,6 +208,8 @@ window_root() {
   local dir="$(__expand_path $@)"
   if [ -d "$dir" ]; then
     window_root="$dir"
+  else
+    window_root="$HOME"
   fi
 }
 
@@ -262,7 +277,6 @@ load_session() {
     session="${session/%.sh}"
   fi
 
-  set_default_path=true
   source "$file"
   session=
 
@@ -290,48 +304,23 @@ initialize_session() {
   fi
 
   # Ensure tmux server is running for has-session check.
-  tmuxifier-tmux start-server
+  tmux start-server
 
   # Check if the named session already exists.
-  if tmuxifier-tmux list-sessions | grep -q "^$session:"; then
+  if tmux list-sessions | grep -q "^$session:"; then
     return 1
   fi
 
-  # Tmux 1.8 and earlier.
-  if [ "$(tmuxifier-tmux-version "1.9")" == "<" ]; then
-    # Create the new session.
-    env TMUX="" tmuxifier-tmux new-session -d -s "$session"
-
-    # Set default-path for session
-    if [ -n "$session_root" ] && [ -d "$session_root" ]; then
-      cd "$session_root"
-
-      $set_default_path && tmuxifier-tmux \
-        set-option -t "$session:" \
-        default-path "$session_root" 1>/dev/null
-    fi
-
-  # Tmux 1.9 and later.
-  else
-    if $set_default_path; then
-      local session_args=(-c "$session_root")
-    fi
-
-    env TMUX="" tmuxifier-tmux new-session \
-      -d -s "$session" "${session_args[@]}"
-  fi
-
-  if $set_default_path && [[ "$session_root" != "$HOME" ]]; then
-    tmuxifier-tmux setenv -t "$session:" \
-      TMUXIFIER_SESSION_ROOT "$session_root"
-  fi
+  tmux new-session -d -s "$session"
 
   # In order to ensure only specified windows are created, we move the
   # default window to position 999, and later remove it with the
   # `finalize_and_go_to_session` function.
   local first_window_index=$(__get_first_window_index)
-  tmuxifier-tmux move-window \
-    -s "$session:$first_window_index" -t "$session:999"
+
+  tmux move-window \
+    -s "$session:$first_window_index" \
+    -t "$session:999"
 }
 
 # Finalize session creation and then switch to it if needed.
@@ -344,7 +333,7 @@ initialize_session() {
 # created, but already existed, then we'll need to specifically switch to it.
 #
 finalize_and_go_to_session() {
-  ! tmuxifier-tmux kill-window -t "$session:999" 2>/dev/null
+  ! tmux kill-window -t "$session:999" 2>/dev/null
   if [[ "$(tmuxifier-current-session)" != "$session" ]]; then
     __go_to_session
   fi
@@ -367,8 +356,11 @@ __expand_path() {
 }
 
 __get_first_window_index() {
-  local index=$(tmuxifier-tmux list-windows -t "$session:" \
-    -F "#{window_index}" 2>/dev/null)
+  local index=$(
+    tmux list-windows \
+      -t "$session:" \
+      -F "#{window_index}" 2>/dev/null
+  )
 
   if [ -n "$index" ]; then
     echo "$index" | head -1
@@ -378,8 +370,11 @@ __get_first_window_index() {
 }
 
 __get_current_window_index() {
-  local lookup=$(tmuxifier-tmux list-windows -t "$session:" \
-    -F "#{window_active}:#{window_index}" 2>/dev/null | grep "^1:")
+  local lookup=$(
+    tmux list-windows \
+      -t "$session:" \
+      -F "#{window_active}:#{window_index}" 2>/dev/null | grep "^1:"
+  )
 
   if [ -n "$lookup" ]; then
     echo "${lookup/1:}"
@@ -388,27 +383,9 @@ __get_current_window_index() {
 
 __go_to_session() {
   if [ -z "$TMUX" ]; then
-    tmuxifier-tmux $TMUXIFIER_TMUX_ITERM_ATTACH -u \
+    tmux $TMUXIFIER_TMUX_ITERM_ATTACH -u \
       attach-session -t "$session:"
   else
-    tmuxifier-tmux -u switch-client -t "$session:"
-  fi
-}
-
-__go_to_window_or_session_path() {
-  local target_path
-
-  if [ -n "$window_root" ]; then
-    target_path="$window_root"
-  elif [ -n "$TMUXIFIER_SESSION_ROOT" ]; then
-    target_path="$TMUXIFIER_SESSION_ROOT"
-  elif [ -n "$session_root" ]; then
-    target_path="$session_root"
-  fi
-
-  # local window_or_session_root=${window_root-$session_root}
-  if [ -n "$target_path" ]; then
-    run_cmd "cd \"$target_path\""
-    run_cmd "clear"
+    tmux -u switch-client -t "$session:"
   fi
 }
